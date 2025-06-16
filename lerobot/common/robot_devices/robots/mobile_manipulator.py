@@ -241,20 +241,32 @@ class MobileManipulator:
         for name in self.leader_arms:
             print(f"Connecting {name} leader arm.")
             self.calibrate_leader()
-
+        
         # Set up ZeroMQ sockets to communicate with the remote mobile robot.
         self.context = zmq.Context()
         self.cmd_socket = self.context.socket(zmq.PUSH)
         connection_string = f"tcp://{self.remote_ip}:{self.remote_port}"
         self.cmd_socket.connect(connection_string)
         self.cmd_socket.setsockopt(zmq.CONFLATE, 1)
-        self.video_socket = self.context.socket(zmq.PULL)
-        video_connection = f"tcp://{self.remote_ip}:{self.remote_port_video}"
-        self.video_socket.connect(video_connection)
-        self.video_socket.setsockopt(zmq.CONFLATE, 1)
+        
+        # 根据 transmission_mode 参数决定连接方式
+        if self.config.transmission_mode == 'local':
+            # 本地局域网连接
+            self.video_socket = self.context.socket(zmq.PULL)
+            video_connection = f"tcp://{self.remote_ip}:{self.remote_port_video}"
+            self.video_socket.connect(video_connection)
+            self.video_socket.setsockopt(zmq.CONFLATE, 1)
+        else:
+            # 云服务器连接
+            self.video_socket = self.context.socket(zmq.SUB)
+            video_connection = f"tcp://{self.remote_ip}:{self.remote_port_video}"
+            self.video_socket.connect(video_connection)
+            self.video_socket.setsockopt_string(zmq.SUBSCRIBE, "")
+
         print(
             f"[INFO] Connected to remote robot at {connection_string} and video stream at {video_connection}."
         )
+
         self.is_connected = True
 
     def load_or_run_calibration_(self, name, arm, arm_type):

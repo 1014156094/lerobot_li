@@ -26,13 +26,30 @@ from lerobot.common.robot_devices.robots.mobile_manipulator import LeKiwi
 
 def setup_zmq_sockets(config):
     context = zmq.Context()
-    cmd_socket = context.socket(zmq.PULL)
-    cmd_socket.setsockopt(zmq.CONFLATE, 1)
-    cmd_socket.bind(f"tcp://*:{config.port}")
+    
+    # 根据 transmission_mode 参数决定连接方式
+    if config.transmission_mode == "local":
+        # 本地局域网连接
+        cmd_socket = context.socket(zmq.PULL)
+        cmd_socket.bind(f"tcp://*:{config.port}")
+        cmd_socket.setsockopt(zmq.CONFLATE, 1)
 
-    video_socket = context.socket(zmq.PUSH)
-    video_socket.setsockopt(zmq.CONFLATE, 1)
-    video_socket.bind(f"tcp://*:{config.video_port}")
+        video_socket = context.socket(zmq.PUSH)
+        video_socket.setsockopt(zmq.CONFLATE, 1)
+        video_socket.bind(f"tcp://*:{config.video_port}")
+        
+        print(f"[INFO] Using local network connection. Listening on ports {config.port} and {config.video_port}")
+    else:
+        # 云服务器连接
+        cmd_socket.connect(f"tcp://{config.ip}:{config.port}")
+        cmd_socket.setsockopt(zmq.CONFLATE, 1)
+        cmd_socket.setsockopt_string(zmq.SUBSCRIBE, "")  # 需要订阅所有消息才能正常接收数据 (空主题)
+
+        video_socket = context.socket(zmq.PUSH)
+        video_socket.setsockopt(zmq.CONFLATE, 1)
+        video_socket.connect(f"tcp://{config.ip}:{config.video_port}")
+        
+        print(f"[INFO] Using cloud server connection. Connecting to {config.ip}:{config.port} and {config.ip}:{config.video_port}")
 
     return context, cmd_socket, video_socket
 
@@ -145,7 +162,9 @@ def run_lekiwi(robot_config):
             while True:
                 try:
                     msg = cmd_socket.recv_string(zmq.NOBLOCK)
+                    print('收到的数据', msg)
                 except zmq.Again:
+                    print('没收到数据，则跳过')
                     break
                 try:
                     data = json.loads(msg)
@@ -204,6 +223,7 @@ def run_lekiwi(robot_config):
                 "present_speed": current_velocity,
                 "follower_arm_state": follower_arm_state,
             }
+
             # Send the observation over the video socket.
             video_socket.send_string(json.dumps(observation))
 

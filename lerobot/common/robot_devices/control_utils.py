@@ -270,7 +270,7 @@ def control_loop(
             if action is not None:
                 for k, v in action.items():
                     for i, vv in enumerate(v):
-                        rr.log(f"sent_{k}_{i}", rr.Scalar(vv.numpy()))
+                        rr.log(f"sent_{k}_{i}", rr.Scalars(scalars=[vv.numpy().item()]))
 
             image_keys = [key for key in observation if "image" in key]
             for key in image_keys:

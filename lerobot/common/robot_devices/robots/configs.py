@@ -602,7 +602,7 @@ class LeKiwiRobotConfig(RobotConfig):
     max_relative_target: int | None = None
 
     # Network Configuration
-    ip: str = "172.16.16.98"
+    ip: str = "172.16.16.102"
     port: int = 5515
     video_port: int = 5516
     # Control source: "local" for local network, "cloud" for cloud server

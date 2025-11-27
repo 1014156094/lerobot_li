@@ -1,4 +1,4 @@
- #!/bin/bash
+#!/bin/bash
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate car
 cd /home/cnw/Desktop/code/lerobot_li

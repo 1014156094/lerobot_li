@@ -13,6 +13,7 @@
 # limitations under the License.
 import importlib
 import inspect
+import logging
 import pkgutil
 import sys
 from argparse import ArgumentError
@@ -207,12 +208,18 @@ def wrap(config_path: Path | None = None):
                 cfg = args[0]
                 args = args[1:]
             else:
+                original_sys_argv = sys.argv[:]
                 cli_args = sys.argv[1:]
                 # 注意：draccus 在构建顶层 argparse 解析器时，还不知道具体会实例化哪个
                 # RobotConfig 子类（ChoiceRegistry 模式），因此像 `robot.status_report.*`
                 # 这样的嵌套字段不会注册成 CLI 参数，会被 argparse 判定为未知参数。
                 # 这里先把它们拦截下来，等到 robot config 实例化之后再手动写回去。
                 cli_args, status_report_overrides = _extract_status_report_overrides(cli_args)
+                if len(cli_args) != len(original_sys_argv) - 1:
+                    # 同步回 sys.argv，避免后续任何读取 sys.argv 的逻辑（例如 draccus 内部）再次看到这些参数
+                    sys.argv = [original_sys_argv[0], *cli_args]
+                if status_report_overrides:
+                    logging.info(f"Intercepted robot.status_report overrides: {status_report_overrides}")
                 plugin_args = parse_plugin_args(PLUGIN_DISCOVERY_SUFFIX, cli_args)
                 for plugin_cli_arg, plugin_path in plugin_args.items():
                     try:

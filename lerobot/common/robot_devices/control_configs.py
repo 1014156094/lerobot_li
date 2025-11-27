@@ -42,7 +42,8 @@ class TeleoperateControlConfig(ControlConfig):
     teleop_time_s: float | None = None
     # Display all cameras on screen
     display_data: bool = False
-    # Control source: "local" or "cloud"
+    # Note: transmission_mode is now read from robot config, not control config
+    # This field is kept for backward compatibility but will be ignored
     transmission_mode: str = "local"
 
 
@@ -123,7 +124,8 @@ class RemoteRobotConfig(ControlConfig):
     # Rerun configuration for remote robot (https://ref.rerun.io/docs/python/0.22.1/common/initialization_functions/#rerun.connect_tcp)
     viewer_ip: str | None = None
     viewer_port: str | None = None
-    # Control source: "local" or "cloud"
+    # Note: transmission_mode is now read from robot config, not control config
+    # This field is kept for backward compatibility but will be ignored
     transmission_mode: str = "local"
 
 

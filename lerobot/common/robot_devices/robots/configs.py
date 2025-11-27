@@ -31,10 +31,47 @@ from lerobot.common.robot_devices.motors.configs import (
 
 
 @dataclass
+class RobotStatusReportConfig:
+    enabled: bool = False
+    endpoint: str = "http://127.0.0.1:8003/api/robots/heartbeat"
+    robot_id: str = "robot-demo"
+    robot_name: str | None = None
+    token: str | None = None
+    interval_seconds: int = 5
+    timeout_seconds: int = 3
+
+
+@dataclass
 class RobotConfig(draccus.ChoiceRegistry, abc.ABC):
+    status_report: RobotStatusReportConfig = field(default_factory=RobotStatusReportConfig)
+
+    # CLI 可覆盖的心跳参数（不直接写入配置文件）
+    status_report_enabled: bool | None = field(default=None, repr=False)
+    status_report_endpoint: str | None = field(default=None, repr=False)
+    status_report_robot_id: str | None = field(default=None, repr=False)
+    status_report_robot_name: str | None = field(default=None, repr=False)
+    status_report_token: str | None = field(default=None, repr=False)
+    status_report_timeout_seconds: int | None = field(default=None, repr=False)
+
     @property
     def type(self) -> str:
         return self.get_choice_name(self.__class__)
+
+    def __post_init__(self):
+        self._apply_status_report_overrides()
+
+    def _apply_status_report_overrides(self):
+        overrides = {
+            "enabled": self.status_report_enabled,
+            "endpoint": self.status_report_endpoint,
+            "robot_id": self.status_report_robot_id,
+            "robot_name": self.status_report_robot_name,
+            "token": self.status_report_token,
+            "timeout_seconds": self.status_report_timeout_seconds,
+        }
+        for field_name, value in overrides.items():
+            if value is not None:
+                setattr(self.status_report, field_name, value)
 
 
 # TODO(rcadene, aliberts): remove ManipulatorRobotConfig abstraction
@@ -58,6 +95,7 @@ class ManipulatorRobotConfig(RobotConfig):
     mock: bool = False
 
     def __post_init__(self):
+        super().__post_init__()
         if self.mock:
             for arm in self.leader_arms.values():
                 if not arm.mock:
@@ -602,9 +640,12 @@ class LeKiwiRobotConfig(RobotConfig):
     max_relative_target: int | None = None
 
     # Network Configuration
-    ip: str = "172.16.16.102"
-    port: int = 5515
-    video_port: int = 5516
+    ip: str = "117.50.34.249"
+    # ip: str = "172.16.16.93"
+    # port: int = 5515
+    port: int = 5555
+    # video_port: int = 5516
+    video_port: int = 5556
     # Control source: "local" for local network, "cloud" for cloud server
     transmission_mode: str = "local"
 
@@ -613,10 +654,12 @@ class LeKiwiRobotConfig(RobotConfig):
             "front": OpenCVCameraConfig(
                 # camera_index="/dev/video0", fps=30, width=640, height=480, rotation=90
                 camera_index=2, fps=30, width=640, height=480, rotation=90
+                # camera_index=0, fps=30, width=640, height=480, rotation=90
             ),
             "wrist": OpenCVCameraConfig(
                 # camera_index="/dev/video1", fps=30, width=640, height=480, rotation=180
                 camera_index=1, fps=30, width=640, height=480, rotation=180
+                # camera_index=0, fps=30, width=640, height=480, rotation=180
             ),
         }
     )
@@ -680,3 +723,13 @@ class LeKiwiRobotConfig(RobotConfig):
     )
 
     mock: bool = False
+
+    status_report: RobotStatusReportConfig = field(
+        default_factory=lambda: RobotStatusReportConfig(
+            enabled=True,
+            endpoint="http://117.50.34.249:8003/api/robots/heartbeat",
+            robot_id="lekiwi-main",
+            robot_name="LeKiwi 移动操作臂",
+            interval_seconds=5,
+        )
+    )

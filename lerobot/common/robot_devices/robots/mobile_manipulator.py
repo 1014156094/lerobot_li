@@ -260,8 +260,10 @@ class MobileManipulator:
             # 云服务器连接
             self.video_socket = self.context.socket(zmq.SUB)
             video_connection = f"tcp://{self.remote_ip}:{self.remote_port_video}"
+            print(f"[INFO] Connecting video SUB socket to {video_connection}...")
             self.video_socket.connect(video_connection)
             self.video_socket.setsockopt_string(zmq.SUBSCRIBE, "")
+            print(f"[INFO] Video SUB socket connected and subscribed to all topics.")
 
         print(
             f"[INFO] Connected to remote robot at {connection_string} and video stream at {video_connection}."

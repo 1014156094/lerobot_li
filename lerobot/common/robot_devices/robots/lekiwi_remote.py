@@ -22,6 +22,7 @@ import cv2
 import zmq
 
 from lerobot.common.robot_devices.robots.mobile_manipulator import LeKiwi
+from lerobot.common.robot_devices.robots.status_reporter import HeartbeatReporter
 
 
 def setup_zmq_sockets(config):
@@ -41,9 +42,10 @@ def setup_zmq_sockets(config):
         print(f"[INFO] Using local network connection. Listening on ports {config.port} and {config.video_port}")
     else:
         # 云服务器连接
-        cmd_socket.connect(f"tcp://{config.ip}:{config.port}")
+        cmd_socket = context.socket(zmq.SUB)
         cmd_socket.setsockopt(zmq.CONFLATE, 1)
         cmd_socket.setsockopt_string(zmq.SUBSCRIBE, "")  # 需要订阅所有消息才能正常接收数据 (空主题)
+        cmd_socket.connect(f"tcp://{config.ip}:{config.port}")
 
         video_socket = context.socket(zmq.PUSH)
         video_socket.setsockopt(zmq.CONFLATE, 1)
@@ -146,6 +148,14 @@ def run_lekiwi(robot_config):
     latest_images_dict = {}
     images_lock = threading.Lock()
     stop_event = threading.Event()
+    
+    # 启动心跳上报
+    if hasattr(robot_config, 'status_report') and robot_config.status_report:
+        heartbeat_reporter = HeartbeatReporter(robot_config.status_report)
+        heartbeat_reporter.start()
+    else:
+        print("[WARNING] status_report 配置不存在或未启用，跳过心跳上报")
+        heartbeat_reporter = None
     cam_thread = threading.Thread(
         target=run_camera_capture, args=(cameras, images_lock, latest_images_dict, stop_event), daemon=True
     )
@@ -239,6 +249,8 @@ def run_lekiwi(robot_config):
         cam_thread.join()
         robot.stop()
         motors_bus.disconnect()
+        if heartbeat_reporter:
+            heartbeat_reporter.stop()
         cmd_socket.close()
         video_socket.close()
         context.term()

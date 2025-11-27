@@ -405,6 +405,17 @@ def _init_rerun(control_config: ControlConfig, session_name: str = "lerobot_cont
 @parser.wrap()
 def control_robot(cfg: ControlPipelineConfig):
     init_logging()
+    
+    # Auto-sync transmission_mode from control to robot config for convenience
+    # If user sets --control.transmission_mode, automatically apply it to robot config
+    if hasattr(cfg.control, 'transmission_mode') and hasattr(cfg.robot, 'transmission_mode'):
+        if cfg.control.transmission_mode != cfg.robot.transmission_mode:
+            logging.info(
+                f"Syncing transmission_mode from control ({cfg.control.transmission_mode}) "
+                f"to robot config (was {cfg.robot.transmission_mode})"
+            )
+            cfg.robot.transmission_mode = cfg.control.transmission_mode
+    
     logging.info(pformat(asdict(cfg)))
 
     robot = make_robot_from_config(cfg.robot)

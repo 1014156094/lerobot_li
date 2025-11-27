@@ -81,9 +81,9 @@ python lerobot/scripts/control_robot.py `
 | `--control.transmission_mode` | 否 | 与 `robot.transmission_mode` 相同 | 建议保持一致，否则指令/视频不同步 |
 | `--control.fps` | 否 | `30` | 控制循环频率，示例中限制为 10 FPS 便于调试 |
 | `--control.display_data` | 否 | `false` | 是否打开本地可视化窗口；在服务器环境可设为 `false` |
-| `--robot.status_report_enabled` | 否 | `true` | 心跳上报开关；设为 `false` 可禁用 |
-| `--robot.status_report_endpoint` | 否 | `http://117.50.34.249:8003/api/robots/heartbeat` | 心跳 HTTP 接口地址 |
-| `--robot.status_report_robot_id` | 否 | `lekiwi-main` | 在后台展示的机器人唯一 ID，可按需修改 |
+| `--robot.status_report.enabled` | 否 | `true` | 心跳上报开关；设为 `false` 可禁用 |
+| `--robot.status_report.endpoint` | 否 | `http://117.50.34.249:8003/api/robots/heartbeat` | 心跳 HTTP 接口地址 |
+| `--robot.status_report.robot_id` | 否 | `lekiwi-main` | 在后台展示的机器人唯一 ID，可按需修改 |
 
 > 心跳发送间隔（`status_report.interval_seconds`，默认 5 秒）请直接在配置文件中调整，无需命令行覆盖。
 
@@ -92,14 +92,14 @@ python lerobot/scripts/control_robot.py `
 ### 心跳上报启动与验证
 
 1. **确认配置**：在 `lerobot/common/robot_devices/robots/configs.py` 中确保 `LeKiwiRobotConfig.status_report.enabled = True`，`endpoint` 指向后端 `POST /api/robots/heartbeat`。  
-   - 如需仅通过命令行开启/覆盖，可在任何启动命令后追加（注意使用下划线 `_`）：  
+   - 如需仅通过命令行开启/覆盖，可在任何启动命令后追加（注意使用点号进入嵌套字段）：  
      ```powershell
-     --robot.status_report_enabled=true `
-     --robot.status_report_endpoint=http://117.50.34.249:8003/api/robots/heartbeat `
-     --robot.status_report_robot_id=lekiwi-main `
-     --robot.status_report_robot_name="LeKiwi 移动操作臂"
+     --robot.status_report.enabled=true `
+     --robot.status_report.endpoint=http://117.50.34.249:8003/api/robots/heartbeat `
+     --robot.status_report.robot_id=lekiwi-main `
+     --robot.status_report.robot_name="LeKiwi 移动操作臂"
      ```
-   - 若不想上报，可显式 `--robot.status_report_enabled=false`
+   - 若不想上报，可显式 `--robot.status_report.enabled=false`
 2. **启动机器人脚本**（本地/云均可，例如云模式）：
 
 ```powershell

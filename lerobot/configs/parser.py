@@ -202,11 +202,17 @@ def wrap(config_path: Path | None = None):
         def wrapper_inner(*args, **kwargs):
             argspec = inspect.getfullargspec(fn)
             argtype = argspec.annotations[argspec.args[0]]
+            status_report_overrides: dict[str, str] = {}
             if len(args) > 0 and type(args[0]) is argtype:
                 cfg = args[0]
                 args = args[1:]
             else:
                 cli_args = sys.argv[1:]
+                # 注意：draccus 在构建顶层 argparse 解析器时，还不知道具体会实例化哪个
+                # RobotConfig 子类（ChoiceRegistry 模式），因此像 `robot.status_report.*`
+                # 这样的嵌套字段不会注册成 CLI 参数，会被 argparse 判定为未知参数。
+                # 这里先把它们拦截下来，等到 robot config 实例化之后再手动写回去。
+                cli_args, status_report_overrides = _extract_status_report_overrides(cli_args)
                 plugin_args = parse_plugin_args(PLUGIN_DISCOVERY_SUFFIX, cli_args)
                 for plugin_cli_arg, plugin_path in plugin_args.items():
                     try:
@@ -224,9 +230,90 @@ def wrap(config_path: Path | None = None):
                     cfg = argtype.from_pretrained(config_path_cli, cli_args=cli_args)
                 else:
                     cfg = draccus.parse(config_class=argtype, config_path=config_path, args=cli_args)
+                _apply_status_report_cli_overrides(cfg, status_report_overrides)
             response = fn(cfg, *args, **kwargs)
             return response
 
         return wrapper_inner
 
     return wrapper_outer
+
+
+def _extract_status_report_overrides(cli_args: Sequence[str]) -> tuple[list[str], dict[str, str]]:
+    """从 CLI 中剥离 `--robot.status_report.*` 参数，避免被 argparse 当场拒绝。"""
+    filtered_args: list[str] = []
+    overrides: dict[str, str] = {}
+    skip_next = False
+
+    for idx, arg in enumerate(cli_args):
+        if skip_next:
+            skip_next = False
+            continue
+
+        if arg.startswith("--robot.status_report."):
+            # 主动剥离 `robot.status_report.*` 的命令，避免交给 argparse 时触发
+            # "unrecognized arguments"；draccus 解析完成后再写回 cfg.robot.status_report。
+            key_value = arg[len("--robot.status_report.") :]
+            if "=" in key_value:
+                sub_key, value = key_value.split("=", 1)
+            else:
+                if idx + 1 >= len(cli_args):
+                    raise ArgumentError(
+                        argument=None,
+                        message=f"Missing value for CLI argument '--robot.status_report.{key_value}'",
+                    )
+                sub_key = key_value
+                value = cli_args[idx + 1]
+                skip_next = True
+            overrides[sub_key] = value
+            continue
+
+        filtered_args.append(arg)
+
+    return filtered_args, overrides
+
+
+def _apply_status_report_cli_overrides(cfg, overrides: dict[str, str]) -> None:
+    """把前面剥离的 status_report 覆盖项重新写回 cfg.robot.status_report。"""
+    if not overrides:
+        return
+
+    robot = getattr(cfg, "robot", None)
+    status_report = getattr(robot, "status_report", None) if robot else None
+    if status_report is None:
+        raise ValueError("Robot config is missing 'status_report' field; cannot apply CLI overrides.")
+
+    for sub_key, raw_value in overrides.items():
+        if not hasattr(status_report, sub_key):
+            raise ArgumentError(
+                argument=None,
+                message=f"Unknown status_report field '{sub_key}'. "
+                "Available fields: enabled, endpoint, robot_id, robot_name, token, interval_seconds, timeout_seconds.",
+            )
+
+        current_value = getattr(status_report, sub_key)
+        converted_value = _convert_cli_value(raw_value, current_value)
+        setattr(status_report, sub_key, converted_value)
+
+
+def _convert_cli_value(raw_value: str, current_value):
+    """根据现有字段类型 (bool/int/str) 将字符串值转换成正确类型。"""
+    if isinstance(current_value, bool):
+        if raw_value.lower() in ("true", "1", "yes", "y", "on"):
+            return True
+        if raw_value.lower() in ("false", "0", "no", "n", "off"):
+            return False
+        raise ArgumentError(
+            argument=None, message=f"Invalid boolean value '{raw_value}'. Expected true/false."
+        )
+
+    if isinstance(current_value, int):
+        try:
+            return int(raw_value)
+        except ValueError as e:
+            raise ArgumentError(
+                argument=None, message=f"Invalid integer value '{raw_value}'."
+            ) from e
+
+    # Fallback to string for any other type
+    return raw_value

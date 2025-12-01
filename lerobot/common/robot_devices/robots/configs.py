@@ -642,10 +642,10 @@ class LeKiwiRobotConfig(RobotConfig):
     # Network Configuration
     ip: str = "117.50.34.249"
     # ip: str = "172.16.16.93"
-    # port: int = 5515
-    port: int = 5555
-    # video_port: int = 5516
-    video_port: int = 5556
+    port: int = 5515
+    # port: int = 5555
+    video_port: int = 5516
+    # video_port: int = 5556
     # Control source: "local" for local network, "cloud" for cloud server
     transmission_mode: str = "local"
 

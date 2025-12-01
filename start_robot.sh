@@ -2,4 +2,4 @@
 source /home/cnw/miniconda3/etc/profile.d/conda.sh
 conda activate car
 cd /home/cnw/Desktop/code/lerobot_li
-python lerobot/scripts/control_robot.py --robot.type=lekiwi --control.type=remote_robot --robot.status_report.enabled=true --robot.status_report.endpoint=http://172.16.16.90:8003/api/robots/heartbeat
+python lerobot/scripts/control_robot.py --robot.type=lekiwi --robot.ip=117.50.34.249 --robot.port=5515 --robot.video_port=5516 --robot.transmission_mode=cloud --control.type=remote_robot --control.transmission_mode=cloud --robot.status_report.endpoint=http://117.50.34.249:8003/api/robots/heartbeat

@@ -172,15 +172,15 @@ def run_lekiwi(robot_config):
             while True:
                 try:
                     msg = cmd_socket.recv_string(zmq.NOBLOCK)
-                    print('收到的数据', msg)
                 except zmq.Again:
-                    print('没收到数据，则跳过')
+                    # 没收到数据则跳过
                     break
                 try:
                     data = json.loads(msg)
                     # Process arm position commands.
                     if "arm_positions" in data:
                         arm_positions = data["arm_positions"]
+                        print(f"[机械臂指令] 手臂位置指令: {arm_positions}")
                         if not isinstance(arm_positions, list):
                             print(f"[ERROR] Invalid arm_positions: {arm_positions}")
                         elif len(arm_positions) < len(arm_motor_ids):
@@ -193,6 +193,7 @@ def run_lekiwi(robot_config):
                     # Process wheel (base) commands.
                     if "raw_velocity" in data:
                         raw_command = data["raw_velocity"]
+                        print(f"[轮子指令] 轮子速度指令: {raw_command}")
                         # Expect keys: "left_wheel", "back_wheel", "right_wheel".
                         command_speeds = [
                             int(raw_command.get("left_wheel", 0)),
@@ -235,7 +236,15 @@ def run_lekiwi(robot_config):
             }
 
             # Send the observation over the video socket.
-            video_socket.send_string(json.dumps(observation))
+            try:
+                observation_json = json.dumps(observation)
+                video_socket.send_string(observation_json)
+                # 计算图像数量用于打印
+                num_images = len(images_dict_copy) if images_dict_copy else 0
+                print(f"[SUCCESS] 发送视频画面成功 - 图像数量: {num_images}, 速度: {current_velocity}, 手臂状态: {len(follower_arm_state)}个关节")
+            except Exception as e:
+                num_images = len(images_dict_copy) if images_dict_copy else 0
+                print(f"[ERROR] 发送视频画面失败 - 图像数量: {num_images}, 速度: {current_velocity}, 手臂状态: {len(follower_arm_state)}个关节, error: {e}")
 
             # Ensure a short sleep to avoid overloading the CPU.
             elapsed = time.time() - loop_start_time

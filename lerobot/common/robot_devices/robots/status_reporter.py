@@ -88,12 +88,29 @@ class HeartbeatReporter:
         print("[Heartbeat] 状态上报线程已停止")
 
     def _loop(self):
+        """心跳上报主循环，包含异常处理确保线程不会崩溃"""
         interval = max(1, self._config.interval_seconds or 5)
+        consecutive_failures = 0
+        max_failures_before_warning = 10
+        
         while not self._stop_event.is_set():
-            self._send_once()
+            try:
+                self._send_once()
+                consecutive_failures = 0  # 成功则重置失败计数
+            except Exception as exc:
+                # 捕获所有异常，确保线程不会因为任何错误而停止
+                consecutive_failures += 1
+                if consecutive_failures >= max_failures_before_warning:
+                    print(f"[Heartbeat] 连续{consecutive_failures}次上报失败，最后错误: {exc}")
+                    consecutive_failures = 0  # 重置计数，避免日志刷屏
+                else:
+                    print(f"[Heartbeat] 上报失败: {exc}")
+            
+            # 等待下次上报，即使发生异常也继续循环
             self._stop_event.wait(interval)
 
     def _send_once(self):
+        """发送一次心跳，可能抛出异常"""
         payload = self._build_payload()
         data = json.dumps(payload.as_dict()).encode("utf-8")
         headers = {"Content-Type": "application/json"}
@@ -106,7 +123,8 @@ class HeartbeatReporter:
             with request.urlopen(req, timeout=timeout) as resp:
                 resp.read()
         except error.URLError as exc:
-            print(f"[Heartbeat] 上报失败: {exc}")
+            # 将网络异常重新抛出，由 _loop 统一处理
+            raise
 
     def _build_payload(self) -> HeartbeatPayload:
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")

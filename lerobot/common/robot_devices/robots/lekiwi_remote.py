@@ -25,6 +25,59 @@ from lerobot.common.robot_devices.robots.mobile_manipulator import LeKiwi
 from lerobot.common.robot_devices.robots.status_reporter import HeartbeatReporter
 
 
+def create_sub_socket(context, ip, port):
+    """
+    创建并配置 SUB socket 用于订阅命令消息（cloud 模式）。
+    
+    Args:
+        context: ZMQ context
+        ip: 服务器 IP 地址
+        port: 服务器端口
+        
+    Returns:
+        配置好的 SUB socket，已连接但需要等待延迟
+    """
+    cmd_socket = context.socket(zmq.SUB)
+    cmd_socket.setsockopt(zmq.CONFLATE, 1)
+    # 设置重连参数，提高连接稳定性
+    cmd_socket.setsockopt(zmq.RECONNECT_IVL, 100)  # 初始重连间隔 100ms
+    cmd_socket.setsockopt(zmq.RECONNECT_IVL_MAX, 1000)  # 最大重连间隔 1s
+    cmd_socket.setsockopt(zmq.LINGER, 0)  # 关闭时立即丢弃消息
+    cmd_socket.setsockopt_string(zmq.SUBSCRIBE, "")  # 需要订阅所有消息才能正常接收数据 (空主题)
+    cmd_socket.connect(f"tcp://{ip}:{port}")
+    # SUB socket 需要短暂延迟才能正常接收消息
+    # 原因：ZeroMQ PUB/SUB 模式的 "slow joiner" 问题
+    # - TCP 连接建立是异步的，需要时间完成握手
+    # - SUB socket 需要与 PUB socket 完成订阅协议握手
+    # - 在网络环境中，这个握手过程可能需要 100-200ms
+    # 参考：https://zguide.zeromq.org/docs/chapter2/#The-Slow-Subscriber-Problem
+    # 详细说明：docs/ZMQ_PUB_SUB_DELAY_EXPLANATION.md
+    time.sleep(0.2)
+    return cmd_socket
+
+
+def create_push_socket(context, ip, port):
+    """
+    创建并配置 PUSH socket 用于发送视频消息（cloud 模式）。
+    
+    Args:
+        context: ZMQ context
+        ip: 服务器 IP 地址
+        port: 服务器端口
+        
+    Returns:
+        配置好的 PUSH socket，已连接
+    """
+    video_socket = context.socket(zmq.PUSH)
+    video_socket.setsockopt(zmq.CONFLATE, 1)
+    # 设置重连参数，提高连接稳定性
+    video_socket.setsockopt(zmq.RECONNECT_IVL, 100)
+    video_socket.setsockopt(zmq.RECONNECT_IVL_MAX, 1000)
+    video_socket.setsockopt(zmq.LINGER, 0)
+    video_socket.connect(f"tcp://{ip}:{port}")
+    return video_socket
+
+
 def setup_zmq_sockets(config):
     context = zmq.Context()
     
@@ -42,14 +95,8 @@ def setup_zmq_sockets(config):
         print(f"[INFO] Using local network connection. Listening on ports {config.port} and {config.video_port}")
     else:
         # 云服务器连接
-        cmd_socket = context.socket(zmq.SUB)
-        cmd_socket.setsockopt(zmq.CONFLATE, 1)
-        cmd_socket.setsockopt_string(zmq.SUBSCRIBE, "")  # 需要订阅所有消息才能正常接收数据 (空主题)
-        cmd_socket.connect(f"tcp://{config.ip}:{config.port}")
-
-        video_socket = context.socket(zmq.PUSH)
-        video_socket.setsockopt(zmq.CONFLATE, 1)
-        video_socket.connect(f"tcp://{config.ip}:{config.video_port}")
+        cmd_socket = create_sub_socket(context, config.ip, config.port)
+        video_socket = create_push_socket(context, config.ip, config.video_port)
         
         print(f"[INFO] Using cloud server connection. Connecting to {config.ip}:{config.port} and {config.ip}:{config.video_port}")
 
@@ -162,6 +209,11 @@ def run_lekiwi(robot_config):
     cam_thread.start()
 
     last_cmd_time = time.time()
+    last_connection_check = time.time()
+    consecutive_errors = 0
+    max_consecutive_errors = 5
+    is_cloud_mode = robot_config.transmission_mode != "local"
+    
     print("LeKiwi robot server started. Waiting for commands...")
 
     try:
@@ -172,9 +224,37 @@ def run_lekiwi(robot_config):
             while True:
                 try:
                     msg = cmd_socket.recv_string(zmq.NOBLOCK)
+                    consecutive_errors = 0  # 重置错误计数
+                    last_cmd_time = time.time()
                 except zmq.Again:
                     # 没收到数据则跳过
                     break
+                except (zmq.ZMQError, zmq.ContextTerminated) as e:
+                    # ZMQ 连接错误，需要重连
+                    consecutive_errors += 1
+                    error_msg = f"[ERROR] ZMQ connection error: {e}"
+                    print(error_msg)
+                    
+                    # 如果是 cloud 模式且连续错误，尝试重连
+                    if is_cloud_mode and consecutive_errors >= max_consecutive_errors:
+                        print(f"[WARNING] 连续 {consecutive_errors} 次错误，尝试重新连接命令socket...")
+                        try:
+                            # 关闭旧socket
+                            cmd_socket.close()
+                            # 创建新socket并重连（使用辅助函数）
+                            cmd_socket = create_sub_socket(context, robot_config.ip, robot_config.port)
+                            consecutive_errors = 0
+                            print(f"[SUCCESS] 命令socket重连成功")
+                        except Exception as reconnect_error:
+                            print(f"[ERROR] 重连失败: {reconnect_error}")
+                            time.sleep(1)  # 避免频繁重连
+                    break
+                except Exception as e:
+                    # 其他未预期的错误
+                    print(f"[ERROR] Unexpected error receiving command: {e}")
+                    break
+                    
+                # 解析和执行命令
                 try:
                     data = json.loads(msg)
                     # Process arm position commands.
@@ -204,6 +284,24 @@ def run_lekiwi(robot_config):
                         last_cmd_time = time.time()
                 except Exception as e:
                     print(f"[ERROR] Parsing message failed: {e}")
+
+            # 连接健康检查（仅在 cloud 模式下）
+            # 如果超过 10 秒未收到命令，可能是连接问题
+            if is_cloud_mode:
+                now = time.time()
+                if now - last_connection_check >= 10.0:
+                    time_since_last_cmd = now - last_cmd_time
+                    if time_since_last_cmd > 10.0:
+                        print(f"[WARNING] 已超过 {time_since_last_cmd:.1f} 秒未收到命令，检查连接状态...")
+                        # 尝试通过非阻塞接收测试连接
+                        try:
+                            cmd_socket.recv_string(zmq.NOBLOCK)
+                        except zmq.Again:
+                            # 正常情况，只是没有新消息
+                            pass
+                        except Exception as e:
+                            print(f"[WARNING] 连接测试失败: {e}")
+                    last_connection_check = now
 
             # Watchdog: stop the robot if no command is received for over 0.5 seconds.
             now = time.time()

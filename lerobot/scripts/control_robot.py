@@ -399,7 +399,26 @@ def _init_rerun(control_config: ControlConfig, session_name: str = "lerobot_cont
         else:
             # Get memory limit for rerun viewer parameters
             memory_limit = os.getenv("LEROBOT_RERUN_MEMORY_LIMIT", "10%")
-            rr.spawn(memory_limit=memory_limit)
+            try:
+                rr.spawn(memory_limit=memory_limit)
+            except RuntimeError as e:
+                error_msg = str(e)
+                if "Failed to find Rerun Viewer" in error_msg or "rerun-viewer" in error_msg.lower():
+                    logging.warning("=" * 60)
+                    logging.warning("rerun-viewer 不可用，可视化功能将被禁用")
+                    logging.warning("=" * 60)
+                    logging.warning("提示：")
+                    logging.warning("1. 确保已安装 rerun-sdk: pip install rerun-sdk")
+                    logging.warning("2. 检查 rerun-viewer 是否在 PATH 中")
+                    logging.warning("3. 如果使用 conda，尝试: conda install -c conda-forge rerun-sdk")
+                    logging.warning("4. 或者手动下载: https://github.com/rerun-io/rerun/releases")
+                    logging.warning("=" * 60)
+                    logging.warning("程序将继续运行，但不会显示可视化界面")
+                    # 禁用 display_data，避免后续继续尝试使用 rerun
+                    control_config.display_data = False
+                else:
+                    # 其他类型的 RuntimeError，重新抛出
+                    raise
 
 
 @parser.wrap()
